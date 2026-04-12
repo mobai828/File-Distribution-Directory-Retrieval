@@ -217,7 +217,7 @@
                     // 这里利用后端返回的 HTML (带 <em> 标签) 直接渲染实现高亮
                     card.innerHTML = `
                         <div class="result-title">
-                            ${hit.title} 
+                            <span style="color:#2980b9; font-size: 0.9em; margin-right: 8px;">[${hit.item_no}]</span>${hit.title} 
                             <span class="score-badge">相关度: ${hit.score.toFixed(2)}</span>
                         </div>
                         <div class="result-path">

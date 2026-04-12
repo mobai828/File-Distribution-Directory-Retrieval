@@ -117,13 +117,27 @@ class ESService:
             }
         }
         
-        # 处理关键字检索（在 title 和 ocr_text 中搜索）
+        # 处理关键字检索（在 title、ocr_text 和 item_no 中搜索）
         if keyword:
             query_body["bool"]["must"].append({
-                "multi_match": {
-                    "query": keyword,
-                    "fields": ["title^2", "ocr_text"], # title 权重乘以2
-                    "analyzer": "my_analyzer" # 启用我们配置的同义词分析器
+                "bool": {
+                    "should": [
+                        {
+                            "multi_match": {
+                                "query": keyword,
+                                "fields": ["title^2", "ocr_text"],
+                                "analyzer": "my_analyzer"
+                            }
+                        },
+                        {
+                            "wildcard": {
+                                "item_no": {
+                                    "value": f"*{keyword}*",
+                                    "case_insensitive": True
+                                }
+                            }
+                        }
+                    ]
                 }
             })
         else:
@@ -144,7 +158,8 @@ class ESService:
                 "post_tags": ["</em>"],
                 "fields": {
                     "title": {},
-                    "ocr_text": {}
+                    "ocr_text": {},
+                    "item_no": {}
                 }
             }
         }
@@ -161,9 +176,10 @@ class ESService:
                 # 如果有高亮结果，就替换掉原来的文本
                 display_title = highlight.get("title", [source.get("title")])[0]
                 display_ocr = highlight.get("ocr_text", [source.get("ocr_text", "")])[0]
+                display_item_no = highlight.get("item_no", [source.get("item_no")])[0]
                 
                 results.append({
-                    "item_no": source.get("item_no"),
+                    "item_no": display_item_no,
                     "file_path": source.get("file_path"),
                     "title": display_title,
                     "ocr_text": display_ocr,
