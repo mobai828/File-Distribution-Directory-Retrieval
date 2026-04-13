@@ -43,12 +43,13 @@ async def read_index(request: Request):
 async def search_api(
     keyword: Optional[str] = Query(None, description="搜索关键词"),
     year: Optional[str] = Query(None, description="过滤年度"),
-    retention: Optional[str] = Query(None, description="过滤保管期限")
+    retention: Optional[str] = Query(None, description="过滤保管期限"),
+    exact_item_no: Optional[str] = Query(None, description="精确过滤档号")
 ):
     """
     全文检索接口，接收前端参数，转交 ES 服务处理
     """
-    results = ESService.search_archives(keyword=keyword, year=year, retention=retention)
+    results = ESService.search_archives(keyword=keyword, year=year, retention=retention, exact_item_no=exact_item_no)
     return {"data": results}
 @app.get("/api/records")
 async def get_records():
