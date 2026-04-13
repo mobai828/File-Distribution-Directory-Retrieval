@@ -4,9 +4,9 @@ from elasticsearch import Elasticsearch
 from typing import Dict, Any, List
 
 # 1. 配置 Elastic Cloud 连接凭证
-# 请将这里替换为您截图中的真实信息
-ES_ENDPOINT = "https://my-elasticsearch-project-b3ad93.es.asia-southeast1.gcp.elastic.cloud:443"
-ES_API_KEY = "eFNVZGdaMEJCdndMUkFXVlRDRlo6YlVianBxanJGRzFJMTlQUm5abTNtQQ=="
+# 支持通过环境变量覆盖（避免本地离线/无权限时卡住启动）
+ES_ENDPOINT = os.getenv("ES_ENDPOINT", "https://my-elasticsearch-project-b3ad93.es.asia-southeast1.gcp.elastic.cloud:443")
+ES_API_KEY = os.getenv("ES_API_KEY", "eFNVZGdaMEJCdndMUkFXVlRDRlo6YlVianBxanJGRzFJMTlQUm5abTNtQQ==")
 INDEX_NAME = "archives_index"
 
 # 实例化 ES 客户端
@@ -15,7 +15,8 @@ try:
     es_client = Elasticsearch(
         ES_ENDPOINT,
         api_key=ES_API_KEY,
-        request_timeout=60,
+        # 启动阶段会调用 indices.exists/create；超时过长会导致本地服务长时间不监听端口
+        request_timeout=5,
         verify_certs=True # 如果本地环境有问题，可暂时设为 False，但不推荐
     )
 except Exception as e:

@@ -1,36 +1,101 @@
 @echo off
+setlocal EnableExtensions
 chcp 65001 >nul
-title 启动 - 文件分件项目
+cd /d "%~dp0"
+title Start - Document Search App
+
+set "HOST=127.0.0.1"
+set "PORT=8000"
+set "URL=http://%HOST%:%PORT%/"
+
 echo =========================================
-echo       正在启动 文件分件 项目...
+echo Starting app...
 echo =========================================
 
-:: 检查端口是否被占用
-netstat -ano | findstr :8000 | findstr LISTENING >nul
-if %errorlevel% equ 0 (
-    echo [警告] 端口 8000 已被占用，项目可能已经在运行！
-    echo 请先运行 stop.bat 关闭现有服务，或直接访问 http://127.0.0.1:8000
+set "PYTHON=python"
+if exist ".venv\Scripts\python.exe" set "PYTHON=.venv\Scripts\python.exe"
+if exist "venv\Scripts\python.exe" set "PYTHON=venv\Scripts\python.exe"
+
+%PYTHON% -V >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Python not found.
+    echo Install Python 3.11/3.12 and enable PATH, or create .venv.
+    echo.
+    pause
+    exit /b 1
+)
+
+if not exist ".venv\Scripts\python.exe" (
+    echo Creating virtual environment .venv ...
+    %PYTHON% -m venv .venv >nul 2>&1
+    if errorlevel 1 (
+        echo [ERROR] Failed to create .venv.
+        echo.
+        pause
+        exit /b 1
+    )
+    set "PYTHON=.venv\Scripts\python.exe"
+)
+
+%PYTHON% -m pip -V >nul 2>&1
+if errorlevel 1 (
+    echo Fixing pip with ensurepip ...
+    %PYTHON% -m ensurepip --upgrade >nul 2>&1
+)
+
+%PYTHON% -m pip -V >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] pip unavailable.
+    echo.
+    pause
+    exit /b 1
+)
+
+%PYTHON% -c "import fastapi,uvicorn" >nul 2>&1
+if errorlevel 1 (
+    echo Installing requirements...
+    %PYTHON% -m pip install -r requirements.txt
+)
+
+%PYTHON% -c "import fastapi,uvicorn" >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Dependency install failed.
+    echo Run: %PYTHON% -m pip install -r requirements.txt
+    echo.
+    pause
+    exit /b 1
+)
+
+netstat -ano | findstr :%PORT% | findstr LISTENING >nul
+if not errorlevel 1 (
+    echo [WARN] Port %PORT% is already in use.
+    echo Open %URL% directly, or run stop.bat first.
     echo.
     pause
     exit /b
 )
 
-:: 启动后端服务
-echo [1/2] 启动后端服务 (端口 8000)...
-:: 打开一个新的 cmd 窗口来运行 Python 后端
-start "文件分件服务后台" cmd /k "python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload"
+echo [1/2] Starting backend on %PORT%...
+start "App Backend" cmd /k ""%PYTHON%" -m uvicorn main:app --host %HOST% --port %PORT% --reload"
 
-:: 等待2秒确保服务有时间启动
-timeout /t 2 /nobreak >nul
+echo Waiting for service: %URL%
+powershell -NoProfile -Command "$u='%URL%'; $ok=$false; for($i=0;$i -lt 60;$i++){ try{ Invoke-WebRequest -UseBasicParsing -Uri $u -TimeoutSec 1 ^| Out-Null; $ok=$true; break } catch { Start-Sleep -Milliseconds 500 } }; if(-not $ok){ exit 1 }"
+set "WAIT_ERROR=%errorlevel%"
 
-:: 打开浏览器
-echo [2/2] 正在打开浏览器...
-start http://127.0.0.1:8000
+echo [2/2] Opening browser...
+start "" "%URL%"
 
 echo.
-echo =========================================
-echo 项目启动成功！
-echo - 服务运行在: http://127.0.0.1:8000
-echo - 若要关闭项目，请双击运行 stop.bat
-echo =========================================
+if "%WAIT_ERROR%"=="0" (
+    echo =========================================
+    echo Startup success.
+    echo Service URL: %URL%
+    echo Stop with stop.bat
+    echo =========================================
+) else (
+    echo =========================================
+    echo Browser opened, but backend may not be ready.
+    echo Check the "App Backend" window for details.
+    echo =========================================
+)
 timeout /t 3 >nul
