@@ -1,29 +1,43 @@
-import ssl
 import os
 from elasticsearch import Elasticsearch
 from typing import Dict, Any, List
 
 # 1. 配置 Elastic Cloud 连接凭证
 # 支持通过环境变量覆盖（避免本地离线/无权限时卡住启动）
-ES_ENDPOINT = os.getenv("ES_ENDPOINT", "https://my-elasticsearch-project-b3ad93.es.asia-southeast1.gcp.elastic.cloud:443")
-ES_API_KEY = os.getenv("ES_API_KEY", "eFNVZGdaMEJCdndMUkFXVlRDRlo6YlVianBxanJGRzFJMTlQUm5abTNtQQ==")
+ES_ENDPOINT = os.getenv("ES_ENDPOINT")
+ES_API_KEY = os.getenv("ES_API_KEY")
 INDEX_NAME = "archives_index"
+ES_WRITE_REFRESH = os.getenv("ES_WRITE_REFRESH", "").strip().lower() in {"1", "true", "yes", "on"}
 
 # 实例化 ES 客户端
+es_init_error = None
 try:
     # 针对部分 Serverless 实例，可能需要调整 SSL 验证或显式传递 headers
-    es_client = Elasticsearch(
-        ES_ENDPOINT,
-        api_key=ES_API_KEY,
-        # 启动阶段会调用 indices.exists/create；超时过长会导致本地服务长时间不监听端口
-        request_timeout=5,
-        verify_certs=True # 如果本地环境有问题，可暂时设为 False，但不推荐
-    )
+    if not ES_ENDPOINT:
+        raise ValueError("ES_ENDPOINT 未配置")
+
+    client_kwargs = {
+        "request_timeout": 5,
+        "verify_certs": True
+    }
+    if ES_API_KEY:
+        client_kwargs["api_key"] = ES_API_KEY
+
+    es_client = Elasticsearch(ES_ENDPOINT, **client_kwargs)
 except Exception as e:
-    print(f"ES 初始化失败: {e}")
+    es_init_error = str(e)
+    print(f"ES 初始化失败: {es_init_error}")
     es_client = None
 
 class ESService:
+    @staticmethod
+    def is_available() -> bool:
+        return bool(es_client)
+
+    @staticmethod
+    def get_unavailable_reason() -> str:
+        return es_init_error or "ES 未初始化"
+
     @staticmethod
     def get_synonyms() -> List[str]:
         """
@@ -56,6 +70,7 @@ class ESService:
         初始化索引，配置“注入规则（同义词）”和高亮分词器。
         如果索引不存在则创建。force_recreate为True时会删掉重建，以应用最新规则。
         """
+        global es_client, es_init_error
         if not es_client:
             return False
             
@@ -116,7 +131,9 @@ class ESService:
                 print(f"成功创建 ES 索引: {INDEX_NAME}")
             return True
         except Exception as e:
-            print(f"创建索引失败: {e}")
+            es_init_error = str(e)
+            print(f"创建索引失败: {es_init_error}")
+            es_client = None
             return False
 
     @staticmethod
@@ -124,6 +141,7 @@ class ESService:
         """
         双写机制：将 MySQL 中的元数据和识别出的 OCR 长文本同步到 ES
         """
+        global es_client, es_init_error
         if not es_client:
             return False
             
@@ -138,10 +156,15 @@ class ESService:
         
         try:
             # 以档号作为 ES 的主键文档 ID，实现幂等更新（相同档号多次同步会覆盖而不是新增）
-            es_client.index(index=INDEX_NAME, id=record["item_no"], document=doc)
+            if ES_WRITE_REFRESH:
+                es_client.index(index=INDEX_NAME, id=record["item_no"], document=doc, refresh="wait_for")
+            else:
+                es_client.index(index=INDEX_NAME, id=record["item_no"], document=doc)
             return True
         except Exception as e:
-            print(f"同步文档到 ES 失败: {e}")
+            es_init_error = str(e)
+            print(f"同步文档到 ES 失败: {es_init_error}")
+            es_client = None
             return False
 
     @staticmethod
@@ -150,7 +173,7 @@ class ESService:
         核心检索方法：支持关键字全文检索、高亮、以及基于年度/保管期限的过滤。
         """
         if not es_client:
-            return []
+            raise RuntimeError(ESService.get_unavailable_reason())
             
         # 1. 构建 Bool Query
         query_body = {
@@ -214,8 +237,7 @@ class ESService:
                 "post_tags": ["</em>"],
                 "fields": {
                     "title": {},
-                    "ocr_text": {},
-                    "item_no": {}
+                    "ocr_text": {}
                 }
             }
         }
@@ -232,7 +254,7 @@ class ESService:
                 # 如果有高亮结果，就替换掉原来的文本
                 display_title = highlight.get("title", [source.get("title")])[0]
                 display_ocr = highlight.get("ocr_text", [source.get("ocr_text", "")])[0]
-                display_item_no = highlight.get("item_no", [source.get("item_no")])[0]
+                display_item_no = source.get("item_no")
                 
                 results.append({
                     "item_no": display_item_no,
@@ -244,4 +266,4 @@ class ESService:
             return results
         except Exception as e:
             print(f"ES 检索失败: {e}")
-            return []
+            raise

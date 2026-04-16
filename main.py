@@ -18,7 +18,10 @@ ARCHIVE_ROOT_DIR.mkdir(parents=True, exist_ok=True)
 # 启动时初始化 ES 索引
 @app.on_event("startup")
 async def startup_event():
-    ESService.init_index()
+    force_recreate = os.getenv("ES_FORCE_RECREATE", "").strip().lower() in {"1", "true", "yes", "on"}
+    inited = ESService.init_index(force_recreate=force_recreate)
+    if not inited:
+        return
     # 模拟把现有的数据库记录同步到 ES
     for record in db.records:
         # 将已挂接状态和未挂接状态的都同步进去，保证有数据可查
@@ -49,8 +52,13 @@ async def search_api(
     """
     全文检索接口，接收前端参数，转交 ES 服务处理
     """
-    results = ESService.search_archives(keyword=keyword, year=year, retention=retention, exact_item_no=exact_item_no)
-    return {"data": results}
+    if not ESService.is_available():
+        raise HTTPException(status_code=503, detail=f"全文检索不可用：{ESService.get_unavailable_reason()}")
+    try:
+        results = ESService.search_archives(keyword=keyword, year=year, retention=retention, exact_item_no=exact_item_no)
+        return {"data": results}
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"全文检索失败：{str(e)}")
 @app.get("/api/records")
 async def get_records():
     # 每次获取列表时，实时同步一次硬盘文件状态，保证页面上看到的是真实的“账物相符”

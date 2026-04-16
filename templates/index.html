@@ -201,8 +201,14 @@
                 if (retention) params.append("retention", retention);
                 
                 const response = await fetch(`/api/search?${params.toString()}`);
-                const result = await response.json();
-                const hits = result.data;
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    const msg = result.detail || `请求失败 (${response.status})`;
+                    resultsDiv.innerHTML = `<div class="error">检索失败: ${msg}</div>`;
+                    return;
+                }
+
+                const hits = Array.isArray(result.data) ? result.data : [];
                 
                 if (hits.length === 0) {
                     resultsDiv.innerHTML = "<div style='color: #7f8c8d; padding: 20px; text-align: center;'>未找到匹配的文档。</div>";
