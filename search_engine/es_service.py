@@ -80,9 +80,14 @@ class ESService:
                                 }
                             },
                             "analyzer": {
-                                # 自定义分析器：应用同义词过滤器
-                                "my_analyzer": {
-                                    "tokenizer": "standard", # 在中文环境通常用 ik_max_word，这里用 standard 兜底
+                                # 索引时使用：最大化分词，增加命中率
+                                "my_index_analyzer": {
+                                    "tokenizer": "ik_max_word",
+                                    "filter": ["lowercase", "my_synonym_filter"]
+                                },
+                                # 搜索时使用：智能分词，减少无意义的噪音匹配
+                                "my_search_analyzer": {
+                                    "tokenizer": "ik_smart",
                                     "filter": ["lowercase", "my_synonym_filter"]
                                 }
                             }
@@ -94,8 +99,16 @@ class ESService:
                             "year": {"type": "keyword"},
                             "retention": {"type": "keyword"},
                             "file_path": {"type": "keyword"},
-                            "title": {"type": "text", "analyzer": "my_analyzer"},
-                            "ocr_text": {"type": "text", "analyzer": "my_analyzer"}
+                            "title": {
+                                "type": "text", 
+                                "analyzer": "my_index_analyzer",
+                                "search_analyzer": "my_search_analyzer"
+                            },
+                            "ocr_text": {
+                                "type": "text", 
+                                "analyzer": "my_index_analyzer",
+                                "search_analyzer": "my_search_analyzer"
+                            }
                         }
                     }
                 }
@@ -157,7 +170,7 @@ class ESService:
                             "multi_match": {
                                 "query": keyword,
                                 "fields": ["title^2", "ocr_text"],
-                                "analyzer": "my_analyzer"
+                                "analyzer": "my_search_analyzer"
                             }
                         },
                         # 2. 短语精确匹配，权重更高
