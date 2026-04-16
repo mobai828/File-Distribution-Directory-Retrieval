@@ -1,0 +1,456 @@
+From c156da7f01235100f0414ddd674140306fe90797 Mon Sep 17 00:00:00 2001
+From: mobai828 <mobai828@users.noreply.github.com>
+Date: Thu, 16 Apr 2026 07:06:59 +0000
+Subject: [PATCH] =?UTF-8?q?feat:=20=E6=8B=89=E5=8F=96=E5=B9=B6=E8=BF=90?=
+ =?UTF-8?q?=E8=A1=8C=E9=A1=B9=E7=9B=AE?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Co-authored-by: traeagent <traeagent@users.noreply.github.com>
+---
+ agentgithub |   2 +-
+ fix_dots.py |   4 +
+ patch.js    | 216 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ patch2.js   | 147 +++++++++++++++++++++++++++++++++++
+ replace.py  |  33 ++++++++
+ 5 files changed, 401 insertions(+), 1 deletion(-)
+ create mode 100644 fix_dots.py
+ create mode 100644 patch.js
+ create mode 100644 patch2.js
+ create mode 100644 replace.py
+
+diff --git a/agentgithub b/agentgithub
+index 1f7d6f5..be4bfd8 160000
+--- a/agentgithub
++++ b/agentgithub
+@@ -1 +1 @@
+-Subproject commit 1f7d6f5f115abf2b3eeb7ac3752234fdf566a96a
++Subproject commit be4bfd8a60ac362fb2b22909d2ae60d5b277c504
+diff --git a/fix_dots.py b/fix_dots.py
+new file mode 100644
+index 0000000..d213113
+--- /dev/null
++++ b/fix_dots.py
+@@ -0,0 +1,4 @@
++import sys
++content = open('/workspace/patch.js').read()
++content = content.replace("<span></span>\n                    <span></span>\n                    <span></span>", "<div class=\"typing-indicator\">\n                        <span></span><span></span><span></span>\n                    </div>")
++open('/workspace/patch.js', 'w').write(content)
+diff --git a/patch.js b/patch.js
+new file mode 100644
+index 0000000..f5d9b43
+--- /dev/null
++++ b/patch.js
+@@ -0,0 +1,216 @@
++            // Handle form submission
++            chatForm.addEventListener('submit', async function(e) {
++                e.preventDefault();
++
++                // Get message from input or transcribed text
++                const message = messageInput.value.trim();
++                if (!message) return;
++
++                // --- ADDED: Automatically stop any playing audio immediately when submitting ---
++                if (currentAudio) {
++                    currentAudio.pause();
++                    currentAudio.currentTime = 0;
++                    URL.revokeObjectURL(currentAudio.src);
++                    currentAudio = null;
++
++                    // Reset all play buttons in the UI
++                    document.querySelectorAll('.play-tts-btn').forEach(btn => {
++                        if (btn.classList.contains('btn-primary')) {
++                            btn.innerHTML = '<i class="fas fa-play"></i> ' + translations[currentLanguage].playVoice;
++                            btn.classList.remove('btn-primary');
++                            btn.classList.add('btn-outline-primary');
++                        }
++                    });
++
++                    document.querySelectorAll('.stop-tts-btn').forEach(btn => {
++                        btn.classList.add('d-none');
++                    });
++                }
++                // --------------------------------------------------------------------------------
++
++                // Add user message to chat
++                const userMessageElement = document.createElement('div');
++                userMessageElement.className = 'message user-message';
++
++                // Create message content
++                let messageContent = `<p>${message}</p>`;
++
++                userMessageElement.innerHTML = messageContent;
++                chatBody.appendChild(userMessageElement);
++
++                // Add thinking indicator
++                const thinkingElement = document.createElement('div');
++                thinkingElement.className = 'message assistant-message thinking';
++                thinkingElement.innerHTML = `
++                    <div class="typing-indicator">
++                        <span></span><span></span><span></span>
++                    </div>
++                `;
++                chatBody.appendChild(thinkingElement);
++
++                // Scroll to bottom
++                chatBody.scrollTop = chatBody.scrollHeight;
++
++                // Clear input
++                messageInput.value = '';
++                messageInput.style.height = 'auto';
++
++                try {
++                    let response;
++
++                    // Send to backend using the /chat endpoint
++                    response = await fetch('/chat', {
++                        method: 'POST',
++                        headers: {
++                            'Content-Type': 'application/json'
++                        },
++                        body: JSON.stringify({
++                            query: message,
++                            language: currentLanguage,
++                            preferred_agent: currentSelectedAgent
++                        })
++                    });
++
++                    const data = await response.json();
++
++                    // Remove thinking indicator
++                    chatBody.removeChild(thinkingElement);
++
++                    if (response.ok) {
++                        appendAssistantResponse(data);
++                    } else {
++                        // Error handling
++                        const errorElement = document.createElement('div');
++                        errorElement.className = 'message assistant-message bg-light border border-danger';
++                        errorElement.innerHTML = `
++                            <div class="agent-tag text-danger">System</div>
++                            <p class="text-danger mb-2">${translations[currentLanguage].sysError}</p>
++                            <div class="bg-white p-2 rounded small text-danger font-monospace" style="white-space: pre-wrap; overflow-x: auto;">${data.detail || data.response || 'Unknown error'}</div>
++                        `;
++                        chatBody.appendChild(errorElement);
++                    }
++                } catch (error) {
++                    chatBody.removeChild(thinkingElement);
++
++                    const errorElement = document.createElement('div');
++                    errorElement.className = 'message assistant-message bg-light border border-danger';
++                    errorElement.innerHTML = `
++                        <div class="agent-tag text-danger">System</div>
++                        <p class="text-danger mb-2">${translations[currentLanguage].sysError}</p>
++                        <div class="bg-white p-2 rounded small text-danger font-monospace" style="white-space: pre-wrap; overflow-x: auto;">${error.message || error}</div>
++                    `;
++                    chatBody.appendChild(errorElement);
++                }
++
++                // Scroll to bottom
++                chatBody.scrollTop = chatBody.scrollHeight;
++            });
++
++            // Handle CV Form submission
++            cvForm.addEventListener('submit', async function(e) {
++                e.preventDefault();
++                
++                if (!cvImageUpload.files.length) return;
++                
++                // --- ADDED: Automatically stop any playing audio immediately when submitting ---
++                if (currentAudio) {
++                    currentAudio.pause();
++                    currentAudio.currentTime = 0;
++                    URL.revokeObjectURL(currentAudio.src);
++                    currentAudio = null;
++                    
++                    // Reset all play buttons in the UI
++                    document.querySelectorAll('.play-tts-btn').forEach(btn => {
++                        if (btn.classList.contains('btn-primary')) {
++                            btn.innerHTML = '<i class="fas fa-play"></i> ' + translations[currentLanguage].playVoice;
++                            btn.classList.remove('btn-primary');
++                            btn.classList.add('btn-outline-primary');
++                        }
++                    });
++                    
++                    document.querySelectorAll('.stop-tts-btn').forEach(btn => {
++                        btn.classList.add('d-none');
++                    });
++                }
++                // --------------------------------------------------------------------------------
++
++                // Store image data if available
++                let imageDataUrl = cvPreviewImage.src;
++                const selectedTask = document.querySelector('input[name="cvTask"]:checked').value;
++                const taskLabel = selectedTask === 'STROKE' ? 'Stroke Detection' : 'Brain Tumor Detection';
++                
++                // Add user message to chat
++                const userMessageElement = document.createElement('div');
++                userMessageElement.className = 'message user-message';
++                
++                let messageContent = `<p><strong>[${translations[currentLanguage].cvTab}]</strong> ${taskLabel}</p>`;
++                messageContent += `
++                    <div class="mt-2">
++                        <img src="${imageDataUrl}" alt="Uploaded image" class="img-fluid rounded" style="max-height: 200px;">
++                    </div>
++                `;
++                
++                userMessageElement.innerHTML = messageContent;
++                chatBody.appendChild(userMessageElement);
++                
++                // Add thinking indicator
++                const thinkingElement = document.createElement('div');
++                thinkingElement.className = 'message assistant-message thinking';
++                thinkingElement.innerHTML = `
++                    <div class="typing-indicator">
++                        <span></span><span></span><span></span>
++                    </div>
++                `;
++                chatBody.appendChild(thinkingElement);
++                
++                // Scroll to bottom
++                chatBody.scrollTop = chatBody.scrollHeight;
++                
++                // Clear input
++                cvRemoveImageBtn.click();
++                
++                try {
++                    const formData = new FormData();
++                    formData.append('image', cvImageUpload.files[0]);
++                    formData.append('task', selectedTask);
++                    formData.append('language', currentLanguage);
++                    
++                    const response = await fetch('/cv_upload', {
++                        method: 'POST',
++                        body: formData
++                    });
++                    
++                    const data = await response.json();
++                    
++                    // Remove thinking indicator
++                    chatBody.removeChild(thinkingElement);
++                    
++                    if (response.ok) {
++                        appendAssistantResponse(data);
++                    } else {
++                        // Error handling
++                        const errorElement = document.createElement('div');
++                        errorElement.className = 'message assistant-message bg-light border border-danger';
++                        errorElement.innerHTML = `
++                            <div class="agent-tag text-danger">System</div>
++                            <p class="text-danger mb-2">${translations[currentLanguage].sysError}</p>
++                            <div class="bg-white p-2 rounded small text-danger font-monospace" style="white-space: pre-wrap; overflow-x: auto;">${data.detail || data.response || 'Unknown error'}</div>
++                        `;
++                        chatBody.appendChild(errorElement);
++                    }
++                } catch (error) {
++                    chatBody.removeChild(thinkingElement);
++                    
++                    const errorElement = document.createElement('div');
++                    errorElement.className = 'message assistant-message bg-light border border-danger';
++                    errorElement.innerHTML = `
++                        <div class="agent-tag text-danger">System</div>
++                        <p class="text-danger mb-2">${translations[currentLanguage].sysError}</p>
++                        <div class="bg-white p-2 rounded small text-danger font-monospace" style="white-space: pre-wrap; overflow-x: auto;">${error.message || error}</div>
++                    `;
++                    chatBody.appendChild(errorElement);
++                }
++                
++                // Scroll to bottom
++                chatBody.scrollTop = chatBody.scrollHeight;
++            });
+diff --git a/patch2.js b/patch2.js
+new file mode 100644
+index 0000000..95daded
+--- /dev/null
++++ b/patch2.js
+@@ -0,0 +1,147 @@
++            function appendAssistantResponse(data, uploadedImageDataUrl = null) {
++                const assistantMessageElement = document.createElement('div');
++                assistantMessageElement.className = 'message assistant-message';
++
++                const cleanText = removeMarkdown(data.response);
++
++                let assistantHtml = `
++                    <div class="agent-tag">${data.agent === "HUMAN_VALIDATED" ? translations[currentLanguage].humanVal : data.agent}</div>
++                    <div>${marked.parse(data.response)}</div>
++                    <div class="audio-controls mt-2 d-flex align-items-center">
++                        <button class="btn btn-sm btn-outline-primary play-tts-btn">
++                            <i class="fas fa-play"></i> ${translations[currentLanguage].playVoice}
++                        </button>
++                        <button class="btn btn-sm btn-outline-danger stop-tts-btn d-none ms-2" title="Stop Audio">
++                            <i class="fas fa-stop"></i>
++                        </button>
++                    </div>
++                `;
++
++                if (data.agent.includes("HUMAN_VALIDATION")) {
++                    assistantHtml += `
++                        <div class="mt-3 p-3 border rounded bg-light">
++                            <p><strong>${translations[currentLanguage].humanValReq}</strong></p>
++                            <button class="btn btn-success btn-sm validate-btn" data-validation="yes">${translations[currentLanguage].valYes}</button>
++                            <button class="btn btn-danger btn-sm validate-btn" data-validation="no">${translations[currentLanguage].valNo}</button>
++                            <textarea class="form-control mt-2 validation-comments" rows="2" placeholder="${translations[currentLanguage].valComments}"></textarea>
++                        </div>
++                    `;
++                }
++
++                if (data.result_image) {
++                    if (data.agent === "SKIN_LESION_AGENT, HUMAN_VALIDATION" && uploadedImageDataUrl) {
++                        assistantHtml += `
++                            <div class="image-side-by-side">
++                                <div class="image-container">
++                                    <img src="${uploadedImageDataUrl}" alt="Original image" class="img-fluid rounded">
++                                    <div class="image-caption">${translations[currentLanguage].origImage}</div>
++                                </div>
++                                <div class="image-container">
++                                    <img src="${data.result_image}" alt="Segmented image" class="img-fluid rounded">
++                                    <div class="image-caption">${translations[currentLanguage].segResult}</div>
++                                </div>
++                            </div>
++                        `;
++                    } else {
++                        assistantHtml += `
++                            <div class="mt-3">
++                                <img src="${data.result_image}" alt="Result image" class="result-image">
++                            </div>
++                        `;
++                    }
++                }
++
++                assistantMessageElement.innerHTML = assistantHtml;
++                chatBody.appendChild(assistantMessageElement);
++
++                if (data.agent.includes("HUMAN_VALIDATION")) {
++                    document.querySelectorAll('.validate-btn').forEach(button => {
++                        button.addEventListener('click', async function () {
++                            const validation = this.getAttribute('data-validation');
++                            const comments = this.closest('.p-3').querySelector('.validation-comments').value;
++                            await sendValidation(validation, comments);
++                        });
++                    });
++                }
++
++                const playButton = assistantMessageElement.querySelector('.play-tts-btn');
++                const stopButton = assistantMessageElement.querySelector('.stop-tts-btn');
++
++                function resetAllAudioUI() {
++                    document.querySelectorAll('.play-tts-btn').forEach(btn => {
++                        if (btn.classList.contains('btn-primary')) {
++                            btn.innerHTML = '<i class="fas fa-play"></i> ' + translations[currentLanguage].playVoice;
++                            btn.classList.remove('btn-primary');
++                            btn.classList.add('btn-outline-primary');
++                        }
++                    });
++                    document.querySelectorAll('.stop-tts-btn').forEach(btn => {
++                        btn.classList.add('d-none');
++                    });
++                }
++
++                stopButton.addEventListener('click', function() {
++                    if (currentAudio) {
++                        currentAudio.pause();
++                        currentAudio.currentTime = 0;
++                        URL.revokeObjectURL(currentAudio.src);
++                        currentAudio = null;
++                    }
++                    resetAllAudioUI();
++                });
++
++                playButton.addEventListener('click', async function () {
++                    const textForSpeech = cleanText.length > 1000 ? cleanText.substring(0, 1000) + "..." : cleanText;
++                    this.disabled = true;
++                    this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
++
++                    try {
++                        const audioUrl = await generateSpeech(textForSpeech);
++
++                        if (currentAudio) {
++                            currentAudio.pause();
++                            currentAudio.currentTime = 0;
++                            URL.revokeObjectURL(currentAudio.src);
++                            currentAudio = null;
++                        }
++
++                        resetAllAudioUI();
++
++                        currentAudio = new Audio(audioUrl);
++
++                        currentAudio.onplay = () => {
++                            this.innerHTML = '<i class="fas fa-pause"></i> Pause';
++                            this.classList.remove('btn-outline-primary');
++                            this.classList.add('btn-primary');
++                            stopButton.classList.remove('d-none');
++                            this.disabled = false;
++                        };
++
++                        currentAudio.onpause = () => {
++                            this.innerHTML = '<i class="fas fa-play"></i> ' + translations[currentLanguage].playVoice;
++                            this.classList.remove('btn-primary');
++                            this.classList.add('btn-outline-primary');
++                            stopButton.classList.add('d-none');
++                        };
++
++                        currentAudio.onended = () => {
++                            this.innerHTML = '<i class="fas fa-play"></i> ' + translations[currentLanguage].playVoice;
++                            this.classList.remove('btn-primary');
++                            this.classList.add('btn-outline-primary');
++                            stopButton.classList.add('d-none');
++                        };
++
++                        currentAudio.play().catch(e => {
++                            console.error('Playback failed:', e);
++                            this.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Error';
++                            this.classList.remove('btn-primary');
++                            this.classList.add('btn-outline-danger');
++                            this.disabled = false;
++                        });
++                    } catch (e) {
++                        console.error('Speech generation failed:', e);
++                        this.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Error';
++                        this.disabled = false;
++                    }
++                });
++            }
+diff --git a/replace.py b/replace.py
+new file mode 100644
+index 0000000..5604467
+--- /dev/null
++++ b/replace.py
+@@ -0,0 +1,33 @@
++import re
++
++with open('/workspace/agentgithub/templates/index.html', 'r') as f:
++    content = f.read()
++
++start_str = "            // Handle form submission"
++start_idx = content.find(start_str)
++
++end_str = "        // Helper to remove markdown for TTS"
++end_idx = content.find(end_str)
++
++# Find the closing "        });\n" of DOMContentLoaded block
++end_dom_idx = content.rfind("        });\n", start_idx, end_idx)
++
++if start_idx == -1 or end_dom_idx == -1:
++    print("Could not find boundaries")
++    print(start_idx, end_dom_idx)
++    import sys
++    sys.exit(1)
++
++with open('/workspace/patch.js', 'r') as f:
++    patch_js = f.read()
++
++with open('/workspace/patch2.js', 'r') as f:
++    patch2_js = f.read()
++
++# Replace the chatForm submit handler and insert appendAssistantResponse
++new_content = content[:start_idx] + patch_js + "\n" + patch2_js + "\n" + content[end_dom_idx:]
++
++with open('/workspace/agentgithub/templates/index.html', 'w') as f:
++    f.write(new_content)
++
++print("Replacement done")
+-- 
+2.43.0
+
